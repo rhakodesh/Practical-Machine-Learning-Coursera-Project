@@ -1,0 +1,149 @@
+---
+title: "Practical Machine Learning - Coursera Project"
+author: "Samuel Tandoh"
+date: "8/9/2021"
+output: html_document
+    
+---
+
+## Background 
+Using devices such as Jawbone Up, Nike FuelBand, and Fitbit it is now possible to collect a large amount of data about personal activity relatively inexpensively. These type of devices are part of the quantified self movement – a group of enthusiasts who take measurements about themselves regularly to improve their health, to find patterns in their behavior, or because they are tech geeks. One thing that people regularly do is quantify how much of a particular activity they do, but they rarely quantify how well they do it. In this project, your goal will be to use data from accelerometers on the belt, forearm, arm, and dumbell of 6 participants. They were asked to perform barbell lifts correctly and incorrectly in 5 different ways. More information is available from the website here: http://web.archive.org/web/20161224072740/http:/groupware.les.inf.puc-rio.br/har (see the section on the Weight Lifting Exercise Dataset).
+
+
+## Data
+The training data for this project are available here:
+https://d396qusza40orc.cloudfront.net/predmachlearn/pml-training.csv
+
+The test data are available here:
+https://d396qusza40orc.cloudfront.net/predmachlearn/pml-testing.csv
+
+The data for this project come from this source: http://web.archive.org/web/20161224072740/http:/groupware.les.inf.puc-rio.br/har. If you use the document you create for this class for any purpose please cite them as they have been very generous in allowing their data to be used for this kind of assignment.
+
+## Loading the Libraries
+
+```{r, cache = T}
+library(caret)
+library(rpart)
+library(rpart.plot)
+library(randomForest)
+library(corrplot)
+```
+
+
+## Data Preparation
+
+### Loading the Data
+After downloading the data from the data source, we can read the two csv files into two data frames.
+
+```{r, echo=FALSE}
+pml_training <- read.csv("pml-training.csv", na.strings = c("NA", "#DIV/0!", ""))
+pml_testing <-  read.csv("pml-testing.csv", na.strings = c("NA", "#DIV/0!", ""))
+dim(pml_training)
+dim(pml_testing)
+```
+
+
+### Dealing with Missing data
+* We filter out all records that contain more than 95% of the observations being NA.
+```{r, echo=FALSE}
+clncolumn <- colSums(is.na(pml_training))/nrow(pml_training) < 0.95
+clean_pml_training <- pml_training[,clncolumn]
+colSums(is.na(clean_pml_training))/nrow(clean_pml_training)
+```
+
+* Columns 1 to 7 which are irrelevant to the analysis were removed from the data subset.
+
+```{r, echo=FALSE}
+clean_pml_training <- clean_pml_training[,-c(1:7)]
+clean_pml_testing <- pml_testing[,-c(1:7)]
+```
+
+
+### Cross-Validation
+In this section cross-validation will be performed by splitting the training data in training (75%) and testing (25%) data.
+```{r}
+set.seed(22603)
+inTrain <- createDataPartition(clean_pml_training$classe, p=0.75)[[1]]
+training_data <- clean_pml_training[inTrain,]
+testing_data <- clean_pml_training[-inTrain,]
+```
+
+We change the test data set into the same
+
+```{r}
+allNames <- names(clean_pml_training)
+clean_pml_testing <- pml_testing[,allNames[1:52]]
+```
+
+
+## Data Modeling
+
+### 1. Random Forest
+We fit a predictive model for activity recognition using Random Forest algorithm because it automatically selects   important variables and is robust to correlated covariates & outliers in general. We will use 5-fold cross validation when applying the algorithm.
+
+```{r}
+rf_Ctrl <- trainControl(method="cv", 5)
+rf_model <- train(classe ~ ., data=training_data, method="rf", trControl=rf_Ctrl, ntree=250)
+rf_model
+```
+The performance of the model on the validation data set is estimated as follows
+```{r}
+predict_rf <- predict(rf_model, testing_data)
+confusionMatrix((as.factor(testing_data$classe)), predict_rf)
+
+
+```
+
+```{r}
+accuracy <- postResample(predict_rf, (as.factor(testing_data$classe)))
+accuracy
+```
+
+Out of Sample Error
+
+```{r}
+ooserror <- 1 - as.numeric((confusionMatrix((as.factor(testing_data$classe)), predict_rf))$overall[1])
+ooserror
+```
+Therefore, the estimated accuracy of the model is 99.2% and the estimated out-of-sample error is 0.83%.
+
+### 2. Decision Tree
+```{r}
+dt_model <- train(classe ~., method='rpart', data=training_data)
+```
+
+Prediction
+```{r}
+dt_predict <- predict(dt_model, testing_data)
+confusionMatrix((as.factor(testing_data$classe)), dt_predict)
+```
+
+### Conclusion
+From the final result, the **Random Forest** algorithm far outperforms the **Decision Tree** algorithm in terms of accuracy. We are getting **_99.2%_** in sample accuracy, while the decision tree gives us only nearly **_50%_** in sample accuracy.
+
+
+## Prediction
+
+Now we use the Random Forest algorithm to predict the test data set
+
+```{r}
+predict(rf_model, clean_pml_testing)
+```
+
+
+## Appendix: Plots
+
+### Figure 1. Correlation Matrix Visualization
+```{r}
+corrPlot <- cor(training_data[, -length(names(training_data))])
+corrplot(corrPlot, method="color")
+```
+
+
+
+### Figure 2. Decision Tree Visualization
+
+```{r}
+rpart.plot(dt_model$finalModel)
+```
+
